@@ -53,6 +53,8 @@ export
     QuadraticHexahedron,
     CellIndex,
     FaceIndex,
+    EdgeIndex,
+    VertexIndex,
     getcells,
     getncells,
     getnodes,
