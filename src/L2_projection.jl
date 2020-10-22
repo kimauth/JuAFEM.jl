@@ -4,23 +4,26 @@ abstract type AbstractProjector end
 struct L2Projector <: AbstractProjector
     fe_values::CellValues
     M_cholesky # ::SuiteSparse.CHOLMOD.Factor{Float64}
-    dh::DofHandler
+    dh::MixedDofHandler
     set::Vector{Integer}
     node2dof_map
 end
 
-function L2Projector(fe_values::JuAFEM.Values, interp::Interpolation, grid::JuAFEM.AbstractGrid, set=1:getncells(grid))
+function L2Projector(fe_values::JuAFEM.Values, interp::Interpolation,
+    grid::JuAFEM.AbstractGrid, set=1:getncells(grid), fe_values_mass::JuAFEM.Values=fe_values)
 
     dim, T, shape = typeof(fe_values).parameters
 
     # Create an internal scalar valued field. This is enough since the projection is done on a component basis, hence a scalar field.
-    dh = DofHandler(grid)
-    push!(dh, :_, 1, interp)
+    dh = MixedDofHandler(grid)
+    field = Field(:_, interp, 1)
+    fh = FieldHandler([field], Set(set))
+    push!(dh, fh)
     _, vertex_dict, _, _ = close!(dh, true)
 
-    M = _assemble_L2_matrix(fe_values, set, dh)  # the "mass" matrix
+    M = _assemble_L2_matrix(fe_values_mass, set, dh)  # the "mass" matrix
     M_cholesky = cholesky(M)  # TODO maybe have a lazy eval instead of precomputing? / JB
-    return L2Projector(fe_values, M_cholesky, dh, set, vertex_dict[1])
+    return L2Projector(fe_values, M_cholesky, dh, collect(set), vertex_dict[1])
 end
 
 
@@ -80,28 +83,43 @@ function project(
     project_to_nodes=true) where {order,dim,T,M}
 
     projected_vals = _project(vars, proj, M)
-    proj.node2dof_map
     if project_to_nodes
         # NOTE we may have more projected values than verticies in the mesh => not all values are returned
-        num_nodes = length(proj.node2dof_map)
-        reordered_vals = [projected_vals[proj.node2dof_map[node], :] for node in 1:num_nodes]
-        return Tensor{order,dim,T}.(reordered_vals)
+        nnodes = getnnodes(proj.dh.grid)
+        reordered_vals = fill(NaN, nnodes, size(projected_vals, 2))
+        for node = 1:nnodes
+            if haskey(proj.node2dof_map, node)
+                reordered_vals[node, :] = projected_vals[proj.node2dof_map[node], :]
+            end
+        end
+        return Tensor{order,dim,T}.(eachrow(reordered_vals))
     else
         # convert back to the original tensor type
         return Tensor{order,dim,T}.(eachrow(projected_vals))
     end
-
-    return Tensor{order,dim,T}.(eachrow(projected_vals))
 end
 
 function project(
     vars::Array{Array{SymmetricTensor{order,dim,T,M},1},1},
-    proj::L2Projector
-    ) where {order,dim,T,M}
+    proj::L2Projector, project_to_nodes=true) where {order,dim,T,M}
 
     projected_vals = _project(vars, proj, M)
-    # convert back to the original tensor type
-    return SymmetricTensor{order,dim,T}.(eachrow(projected_vals))
+    if project_to_nodes
+        # NOTE we may have more projected values than verticies in the mesh => not all values are returned
+        # num_nodes = length(proj.node2dof_map)
+        nnodes = getnnodes(proj.dh.grid)
+        reordered_vals = fill(NaN, nnodes, size(projected_vals, 2))
+        for node = 1:nnodes
+            if haskey(proj.node2dof_map, node)
+                reordered_vals[node, :] = projected_vals[proj.node2dof_map[node], :]
+            end
+        end
+        # reordered_vals = [projected_vals[proj.node2dof_map[node], :] for node in 1:num_nodes]
+        return SymmetricTensor{order,dim,T}.(eachrow(reordered_vals))
+    else
+        # convert back to the original tensor type
+        return SymmetricTensor{order,dim,T}.(eachrow(projected_vals))
+    end
 end
 
 function _project(vars, proj::L2Projector, M::Integer)
@@ -129,7 +147,7 @@ function _project(vars, proj::L2Projector, M::Integer)
             qp_vars = cell_vars[q_point]
             for i = 1:n
                 v = shape_value(fe_values, q_point, i)
-                fe[i, :] += v * qp_vars[1:M] * dΩ
+                fe[i, :] += v * [qp_vars.data[i] for i=1:M] * dΩ
             end
         end
 
