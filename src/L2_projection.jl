@@ -1,7 +1,6 @@
 
 abstract type AbstractProjector end
 
-    dh::MixedDofHandler
 struct L2Projector{CV<:CellValues} <: AbstractProjector
     fe_values::CV
     M_cholesky #::SuiteSparse.CHOLMOD.Factor{Float64}
