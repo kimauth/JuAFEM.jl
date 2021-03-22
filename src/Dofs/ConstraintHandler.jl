@@ -85,7 +85,7 @@ end
 
 Applies the boundary condition to the right-hand-side vector without modifying the stiffness matrix
 """
-function apply_rhs!(data::RHSData, f::AbstractVector, ch::ConstraintHandler, applyzero::Bool=false)	
+function apply_rhs!(data::RHSData, f::AbstractVector, ch::ConstraintHandler, applyzero::Bool=false)
     K = data.constrained_columns
     @assert length(f) == 0 || length(f) == size(K, 1)
     @boundscheck length(f) == 0 || checkbounds(f, ch.prescribed_dofs)
@@ -452,9 +452,9 @@ function add!(ch::ConstraintHandler, fh::FieldHandler, dbc::Dirichlet)
     field_dim = getfielddims(fh)[field_idx]
     bcvalue = fh.bc_values[field_idx]
     if isa(dbc.faces, Set{Tuple{Int, Int}})
-        JuAFEM._add!(ch, dbc, dbc.faces, interpolation, field_dim, field_offset(fh, dbc.field_name), bcvalue)
+        Ferrite._add!(ch, dbc, dbc.faces, interpolation, field_dim, field_offset(fh, dbc.field_name), bcvalue)
     elseif isa(dbc.faces, Set{Int}) # constraining a nodeset
-        JuAFEM._add!(ch, dbc, dbc.faces, interpolation, field_dim, field_offset(fh, dbc.field_name), bcvalue, fh.cellset)
+        Ferrite._add!(ch, dbc, dbc.faces, interpolation, field_dim, field_offset(fh, dbc.field_name), bcvalue, fh.cellset)
     end
     return ch
 end
@@ -520,6 +520,6 @@ function _add!(ch::ConstraintHandler, dbc::Dirichlet, bcnodes::Set{Int}, interpo
 end
 
 # overcome this check for constraining nodes
-function JuAFEM._check_cellset_dirichlet(cellset::Set{Int}, faceset::Set{Int})
+function Ferrite._check_cellset_dirichlet(cellset::Set{Int}, faceset::Set{Int})
     nothing
 end
